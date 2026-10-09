@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client"
+  output   = "generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SpeciesKind {
+  UNKNOWN
+  CROP
+  WEED
+}
+
+enum SessionStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// Single admin: the fixed default id means there can only ever be one row.
+model Admin {
+  id        String    @id @default("admin")
+  name      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  sessions  Session[]
+}
+
+model Session {
+  id        String        @id @default(cuid())
+  adminId   String
+  admin     Admin         @relation(fields: [adminId], references: [id])
+  fieldName String?
+  cropName  String?
+  rtspUrl   String
+  threshold Float
+  status    SessionStatus @default(RUNNING)
+  notes     String?
+  startedAt DateTime      @default(now())
+  endedAt   DateTime?
+  frames    Frame[]
+
+  @@index([status])
+  @@index([startedAt])
+}
+
+model Frame {
+  id         String      @id @default(cuid())
+  sessionId  String
+  session    Session     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  capturedAt DateTime    @default(now())
+  threshold  Float       // threshold in force when this frame was analysed
+  organ      String?     // PlantNet predicted organ, e.g. "habit"
+  quotaLeft  Int?        // PlantNet remaining requests after this call
+  imagePath  String?     // saved image location, optional
+  latitude   Float?      // for later, when we have GPS
+  longitude  Float?
+  detections Detection[]
+
+  @@index([sessionId, capturedAt])
+}
+
+model Species {
+  id             String      @id @default(cuid())
+  scientificName String      @unique
+  family         String?
+  commonNames    String[]
+  gbifId         String?
+  kind           SpeciesKind @default(UNKNOWN)
+  detections     Detection[]
+}
+
+model Detection {
+  id        String  @id @default(cuid())
+  frameId   String
+  frame     Frame   @relation(fields: [frameId], references: [id], onDelete: Cascade)
+  speciesId String
+  species   Species @relation(fields: [speciesId], references: [id])
+  score     Float
+  accepted  Boolean // score >= the frame's threshold
+
+  @@unique([frameId, speciesId])
+  @@index([speciesId])
+}
